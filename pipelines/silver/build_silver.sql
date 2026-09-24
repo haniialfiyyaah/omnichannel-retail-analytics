@@ -524,4 +524,23 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'reference/campaign_spend.csv';
 
+-- One row per city_id.
+DELETE FROM silver.cities;
+
+INSERT INTO silver.cities (
+    city_id,
+    city_name,
+    country,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'city_id',
+    payload->>'city_name',
+    payload->>'country',
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'reference/city_reference.json';
+
 COMMIT;

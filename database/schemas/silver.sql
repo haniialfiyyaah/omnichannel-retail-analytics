@@ -226,3 +226,12 @@ CREATE TABLE IF NOT EXISTS silver.campaign_spend (
     pipeline_run_id TEXT NOT NULL,
     PRIMARY KEY (spend_date, campaign_id, channel)
 );
+
+-- One row per city.
+CREATE TABLE IF NOT EXISTS silver.cities (
+    city_id TEXT PRIMARY KEY,
+    city_name TEXT NOT NULL,
+    country TEXT NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
