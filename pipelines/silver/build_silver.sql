@@ -350,4 +350,35 @@ ORDER BY
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
 
+-- One winner per event_id. A repeated refund_id is another stage and stays.
+DELETE FROM silver.refund_events;
+
+INSERT INTO silver.refund_events (
+    event_id,
+    event_type,
+    occurred_at_utc,
+    ingested_at_utc,
+    order_id,
+    refund_id,
+    amount,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT DISTINCT ON (payload->>'event_id')
+    payload->>'event_id',
+    payload->>'event_type',
+    (payload->>'occurred_at_utc')::timestamptz,
+    (payload->>'ingested_at_utc')::timestamptz,
+    payload->'payload'->>'order_id',
+    payload->'payload'->>'refund_id',
+    (payload->'payload'->>'amount')::numeric(14, 2),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/refund_events.json'
+ORDER BY
+    payload->>'event_id',
+    (payload->>'occurred_at_utc')::timestamptz DESC,
+    source_line_number DESC;
+
 COMMIT;

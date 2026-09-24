@@ -63,6 +63,9 @@ def build_silver() -> list[tuple[str, int]]:
                 SELECT 'silver.payment_events', count(*)
                 FROM silver.payment_events
                 UNION ALL
+                SELECT 'silver.refund_events', count(*)
+                FROM silver.refund_events
+                UNION ALL
                 SELECT 'rejected.' || rejection_reason, count(*)
                 FROM silver.rejected_records
                 GROUP BY rejection_reason

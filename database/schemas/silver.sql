@@ -148,3 +148,16 @@ CREATE TABLE IF NOT EXISTS silver.payment_events (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per winning event_id. Issued and completed stages of one refund stay.
+CREATE TABLE IF NOT EXISTS silver.refund_events (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    occurred_at_utc TIMESTAMPTZ NOT NULL,
+    ingested_at_utc TIMESTAMPTZ NOT NULL,
+    order_id TEXT NOT NULL,
+    refund_id TEXT NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
