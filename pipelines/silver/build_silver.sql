@@ -503,4 +503,25 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'inventory/inventory_snapshots.csv';
 
+-- One row per spend day, campaign, and channel.
+DELETE FROM silver.campaign_spend;
+
+INSERT INTO silver.campaign_spend (
+    spend_date,
+    campaign_id,
+    channel,
+    spend_amount,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    (payload->>'spend_date')::date,
+    payload->>'campaign_id',
+    payload->>'channel',
+    (payload->>'spend_amount')::numeric(14, 2),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'reference/campaign_spend.csv';
+
 COMMIT;

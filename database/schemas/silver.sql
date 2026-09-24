@@ -215,3 +215,14 @@ CREATE TABLE IF NOT EXISTS silver.inventory_snapshots (
     pipeline_run_id TEXT NOT NULL,
     PRIMARY KEY (product_id, location_id, snapshot_date)
 );
+
+-- One row per spend day, campaign, and channel. campaign_id repeats across days.
+CREATE TABLE IF NOT EXISTS silver.campaign_spend (
+    spend_date DATE NOT NULL,
+    campaign_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    spend_amount NUMERIC(14, 2) NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL,
+    PRIMARY KEY (spend_date, campaign_id, channel)
+);
