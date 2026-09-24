@@ -478,4 +478,29 @@ ORDER BY
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
 
+-- Keep observed inventory days only. A missing day is not inserted as quantity 0.
+DELETE FROM silver.inventory_snapshots;
+
+INSERT INTO silver.inventory_snapshots (
+    product_id,
+    location_id,
+    snapshot_date,
+    available_quantity,
+    reserved_quantity,
+    unit_cost,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'product_id',
+    payload->>'location_id',
+    (payload->>'snapshot_date')::date,
+    (payload->>'available_quantity')::integer,
+    (payload->>'reserved_quantity')::integer,
+    (payload->>'unit_cost')::numeric(14, 2),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'inventory/inventory_snapshots.csv';
+
 COMMIT;

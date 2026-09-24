@@ -202,3 +202,16 @@ CREATE TABLE IF NOT EXISTS silver.web_events (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per product, location, and snapshot day. Missing days are not filled with 0.
+CREATE TABLE IF NOT EXISTS silver.inventory_snapshots (
+    product_id TEXT NOT NULL,
+    location_id TEXT NOT NULL,
+    snapshot_date DATE NOT NULL,
+    available_quantity INTEGER NOT NULL,
+    reserved_quantity INTEGER NOT NULL,
+    unit_cost NUMERIC(14, 2) NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL,
+    PRIMARY KEY (product_id, location_id, snapshot_date)
+);
