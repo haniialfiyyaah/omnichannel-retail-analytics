@@ -319,4 +319,116 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) AS categories ON TRUE;
 
+-- One row per date, channel, and campaign.
+-- Order money is summed once per order, then grouped. Spend is stored once.
+DELETE FROM gold.channel_campaign_daily;
+
+INSERT INTO gold.channel_campaign_daily (
+    metric_date,
+    sales_channel,
+    campaign_id,
+    campaign_spend,
+    attributed_orders,
+    attributed_customers,
+    gross_revenue,
+    net_revenue,
+    refunds,
+    roas,
+    conversion_rate,
+    pipeline_run_id
+)
+SELECT
+    keys.metric_date,
+    keys.sales_channel,
+    keys.campaign_id,
+    COALESCE(spend.campaign_spend, 0),
+    COALESCE(attributed.attributed_orders, 0),
+    COALESCE(attributed.attributed_customers, 0),
+    COALESCE(attributed.gross_revenue, 0),
+    COALESCE(attributed.net_revenue, 0),
+    COALESCE(attributed.refunds, 0),
+    CASE
+        WHEN COALESCE(spend.campaign_spend, 0) = 0 THEN NULL
+        ELSE COALESCE(attributed.net_revenue, 0) / spend.campaign_spend
+    END AS roas,
+    CASE
+        WHEN COALESCE(sessions.session_count, 0) = 0 THEN NULL
+        ELSE COALESCE(attributed.attributed_orders, 0)::numeric / sessions.session_count
+    END AS conversion_rate,
+    COALESCE(attributed.pipeline_run_id, spend.pipeline_run_id, sessions.pipeline_run_id)
+FROM (
+    SELECT spend_date AS metric_date, channel AS sales_channel, campaign_id
+    FROM silver.campaign_spend
+    UNION
+    SELECT order_date, sales_channel, campaign_id
+    FROM gold.order_360 AS orders
+    JOIN (
+        SELECT DISTINCT ON (order_id)
+            order_id,
+            campaign_id
+        FROM silver.web_events
+        WHERE campaign_id IS NOT NULL
+        ORDER BY order_id, occurred_at_utc, event_id
+    ) AS order_campaign ON order_campaign.order_id = orders.order_id
+    UNION
+    SELECT
+        (occurred_at_utc AT TIME ZONE 'UTC')::date,
+        channel,
+        campaign_id
+    FROM silver.web_events
+    WHERE campaign_id IS NOT NULL
+) AS keys
+LEFT JOIN (
+    SELECT
+        orders.order_date AS metric_date,
+        orders.sales_channel,
+        order_campaign.campaign_id,
+        COUNT(*) AS attributed_orders,
+        COUNT(DISTINCT orders.customer_id) AS attributed_customers,
+        SUM(orders.gross_merchandise_value) AS gross_revenue,
+        SUM(orders.net_revenue) AS net_revenue,
+        SUM(orders.refunded_amount) AS refunds,
+        MAX(orders.pipeline_run_id) AS pipeline_run_id
+    FROM gold.order_360 AS orders
+    JOIN (
+        SELECT DISTINCT ON (order_id)
+            order_id,
+            campaign_id
+        FROM silver.web_events
+        WHERE campaign_id IS NOT NULL
+        ORDER BY order_id, occurred_at_utc, event_id
+    ) AS order_campaign ON order_campaign.order_id = orders.order_id
+    GROUP BY orders.order_date, orders.sales_channel, order_campaign.campaign_id
+) AS attributed
+    ON attributed.metric_date = keys.metric_date
+    AND attributed.sales_channel = keys.sales_channel
+    AND attributed.campaign_id = keys.campaign_id
+LEFT JOIN (
+    SELECT
+        spend_date AS metric_date,
+        channel AS sales_channel,
+        campaign_id,
+        SUM(spend_amount) AS campaign_spend,
+        MAX(pipeline_run_id) AS pipeline_run_id
+    FROM silver.campaign_spend
+    GROUP BY spend_date, channel, campaign_id
+) AS spend
+    ON spend.metric_date = keys.metric_date
+    AND spend.sales_channel = keys.sales_channel
+    AND spend.campaign_id = keys.campaign_id
+LEFT JOIN (
+    SELECT
+        (occurred_at_utc AT TIME ZONE 'UTC')::date AS metric_date,
+        channel AS sales_channel,
+        campaign_id,
+        COUNT(DISTINCT session_id) AS session_count,
+        MAX(pipeline_run_id) AS pipeline_run_id
+    FROM silver.web_events
+    WHERE campaign_id IS NOT NULL
+    GROUP BY (occurred_at_utc AT TIME ZONE 'UTC')::date, channel, campaign_id
+) AS sessions
+    ON sessions.metric_date = keys.metric_date
+    AND sessions.sales_channel = keys.sales_channel
+    AND sessions.campaign_id = keys.campaign_id;
+
 COMMIT;
