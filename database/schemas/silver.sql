@@ -113,3 +113,15 @@ CREATE TABLE IF NOT EXISTS silver.sales_channels (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per promotion. start_date and end_date stay calendar dates.
+CREATE TABLE IF NOT EXISTS silver.promotions (
+    promotion_id TEXT PRIMARY KEY,
+    promotion_code TEXT NOT NULL,
+    promotion_type TEXT NOT NULL,
+    discount_rate NUMERIC(8, 4) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

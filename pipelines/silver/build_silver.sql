@@ -272,4 +272,29 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'operational/sales_channels.json';
 
+-- One row per promotion_id. Dates stay calendar dates.
+DELETE FROM silver.promotions;
+
+INSERT INTO silver.promotions (
+    promotion_id,
+    promotion_code,
+    promotion_type,
+    discount_rate,
+    start_date,
+    end_date,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'promotion_id',
+    payload->>'promotion_code',
+    payload->>'promotion_type',
+    (payload->>'discount_rate')::numeric(8, 4),
+    (payload->>'start_date')::date,
+    (payload->>'end_date')::date,
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/promotions.json';
+
 COMMIT;
