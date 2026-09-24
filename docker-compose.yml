@@ -18,18 +18,9 @@ services:
   nl2sql-api:
     build: .
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: retail_analytics
-      POSTGRES_USER: retail
-      POSTGRES_PASSWORD: retail
       ANALYTICS_DB_TARGET: local
-      LOCAL_POSTGRES_HOST: postgres
-      LOCAL_POSTGRES_PORT: 5432
-      LOCAL_POSTGRES_DB: retail_analytics
-      LOCAL_POSTGRES_USER: retail
-      LOCAL_POSTGRES_PASSWORD: retail
       NL2SQL_PROVIDER: mock
+      LOCAL_DATABASE_URL: postgresql://retail:retail@postgres:5432/retail_analytics
     ports:
       - "8000:8000"
     depends_on:
