@@ -140,4 +140,29 @@ ORDER BY
     payload->>'customer_id',
     source_line_number DESC;
 
+-- Keep every profile version. A repeated customer_id is a second version, not a duplicate.
+DELETE FROM silver.customer_profiles;
+
+INSERT INTO silver.customer_profiles (
+    profile_row_id,
+    customer_id,
+    city_id,
+    customer_segment,
+    valid_from_utc,
+    valid_to_utc,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'source_row_id',
+    payload->>'customer_id',
+    payload->>'city_id',
+    payload->>'customer_segment',
+    (payload->>'valid_from_utc')::timestamptz,
+    (payload->>'valid_to_utc')::timestamptz,
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/customer_profiles.json';
+
 COMMIT;

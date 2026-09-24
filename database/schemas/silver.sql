@@ -50,3 +50,15 @@ CREATE TABLE IF NOT EXISTS silver.customers (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- Every profile version stays. customer_id repeats when a customer has two versions.
+CREATE TABLE IF NOT EXISTS silver.customer_profiles (
+    profile_row_id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL,
+    city_id TEXT NOT NULL,
+    customer_segment TEXT NOT NULL,
+    valid_from_utc TIMESTAMPTZ NOT NULL,
+    valid_to_utc TIMESTAMPTZ NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
