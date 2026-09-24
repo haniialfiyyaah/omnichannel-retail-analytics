@@ -188,4 +188,25 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'operational/customer_addresses.json';
 
+-- One row per product_id.
+DELETE FROM silver.products;
+
+INSERT INTO silver.products (
+    product_id,
+    product_name,
+    sku,
+    unit_price,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'product_id',
+    payload->>'product_name',
+    payload->>'sku',
+    (payload->>'unit_price')::numeric(14, 2),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/products.json';
+
 COMMIT;

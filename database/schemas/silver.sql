@@ -73,3 +73,13 @@ CREATE TABLE IF NOT EXISTS silver.customer_addresses (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per product. Category versions are a later table.
+CREATE TABLE IF NOT EXISTS silver.products (
+    product_id TEXT PRIMARY KEY,
+    product_name TEXT NOT NULL,
+    sku TEXT NOT NULL,
+    unit_price NUMERIC(14, 2) NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
