@@ -1,317 +1,161 @@
-# Milestone P1M1 — Omnichannel Retail NL-to-SQL Analytics
+# Omnichannel Retail Analytics
 
-## 1. Skenario
+A local data pipeline for an omnichannel retailer. Orders, payments, refunds, returns, support contacts, web activity, inventory, and campaign spend start as raw files. The pipeline loads them into PostgreSQL as Bronze, Silver, and Gold. A provided NL-to-SQL engine then answers questions from Gold and shows a chart and a table.
 
-Anda bekerja sebagai Data Engineer di perusahaan retail omnichannel. Perusahaan
-menjual produk melalui beberapa channel, memiliki toko fisik dan channel
-digital, menjalankan campaign marketing, serta menerima pembayaran, refund,
-return, dan permintaan bantuan pelanggan.
+This repo does not rebuild the engine, the UI, or the Gold table contract. It builds the path those tools read from.
 
-Data perusahaan tidak berasal dari satu sistem yang rapi. Anda akan menerima
-data dari beberapa sumber berikut:
+## The point
 
-- Data operasional customer, order, product, store, promotion, dan channel.
-- Event payment, refund, return, customer support, serta aktivitas web/mobile.
-- Snapshot inventory harian.
-- Data pengeluaran dan atribusi campaign.
+The source data is messy: duplicate orders, split payments, partial refunds, mixed timezones, missing products, and inventory days that never arrived. The engine can only see Gold. If Gold is wrong, a question still returns a chart, and the chart is wrong. Bronze keeps the original records, Silver rejects bad rows and says why, Gold totals each fact once, and the checks stop the run when those totals do not add up.
 
-Data mentah tersedia melalui Google Drive yang berperan sebagai data lake.
-Gunakan link berikut saat dataset dibagikan:
+The assignment brief is [instruction_brief.md](instruction_brief.md). Table names, grains, and metric formulas are fixed in `[database/schemas/gold.sql](database/schemas/gold.sql)`.
+
+## Pipeline
+
+```mermaid
+flowchart TD
+  raw["data/raw"]
+  bronze["Bronze"]
+  silver["Silver"]
+  gate["Quality gate"]
+  gold["Gold"]
+  validate["Validate Gold"]
+  ui["Engine and UI"]
+
+  raw --> bronze --> silver --> gate --> gold --> validate --> ui
+```
+
+One trigger of `[dags/dag.py](dags/dag.py)` runs these tasks in order. Each task starts only after the one above it succeeds. `quality_gate` stops the run before `build_gold` when Silver fails. `validate_gold` runs after Gold exists, because it compares Gold totals with Silver. The engine and UI are not tasks in this DAG. They start after the run is green.
+
+| Task                 | What it does                                                       |
+| -------------------- | ------------------------------------------------------------------ |
+| `validate_raw_files` | Checks the JSON and CSV files under `data/raw`                     |
+| `initialize_schemas` | Creates Bronze, Silver, Gold, and `ops` if they are missing        |
+| `load_bronze`        | Creates one `pipeline_run_id` and reloads Bronze                   |
+| `build_silver`       | Rebuilds Silver from that Bronze                                   |
+| `quality_gate`       | Checks Silver and records the result in `ops`                      |
+| `build_gold`         | Rebuilds the five Gold tables                                      |
+| `validate_gold`      | Compares Gold with Silver and sets the run to `passed` or `failed` |
+
+A second trigger uses a new `pipeline_run_id` and replaces each layer instead of appending a copy.
+
+| Database           | What it holds                                   |
+| ------------------ | ----------------------------------------------- |
+| `retail_analytics` | Bronze, Silver, Gold, and `ops`                 |
+| `airflow`          | Airflow run history on the same Postgres server |
+
+Bronze and Silver stay on this machine. They are not loaded into Neon.
+
+## Layers
+
+### 1. Raw files and schemas
+
+`validate_raw_files` checks that the JSON and CSV files are under `data/raw`. `initialize_schemas` creates the empty Bronze, Silver, Gold, and `ops` tables when they are missing. `manifest.json` is not required.
+
+### 2. Bronze
+
+Bronze is source evidence. Each record becomes one row in `bronze.raw_records`. The payload stays JSON, including duplicates and invalid values. Nothing is joined or totaled. Loading a file again deletes that file's previous rows and inserts them again.
+
+### 3. Silver
+
+Silver reads Bronze and writes typed tables.
+
+- Timestamps that carry a timezone are stored in UTC.
+- A repeated `order_id` or `event_id` keeps one winner. The losing copy stays in Bronze and is also written to `silver.rejected_records` with a reason, such as `duplicate_order_id`.
+- An item with a negative quantity or an unknown product is rejected and does not enter `silver.order_items`.
+- Customer profile and product category history is kept as versions.
+- A missing inventory day stays missing. It is not filled with zero.
+
+### 4. Quality gate
+
+The gate runs after Silver and before Gold. It checks Silver only:
+
+- `silver.orders` has rows.
+- A duplicate order is in `silver.rejected_records` and is not stored twice.
+- A rejected item is absent from `silver.order_items`.
+
+A failure is stored in `ops.quality_checks`. Airflow does not start `build_gold`.
+
+### 5. Gold
+
+Gold reads Silver only. Amounts are aggregated to the table grain before any join, so a promotion or campaign cannot multiply units or revenue.
+
+| Table                    | One row per                            |
+| ------------------------ | -------------------------------------- |
+| `order_360`              | order                                  |
+| `customer_daily`         | customer and day                       |
+| `product_daily`          | product and day                        |
+| `channel_campaign_daily` | day, channel, and campaign             |
+| `executive_kpis_daily`   | day, summed from the other Gold tables |
+
+`net_revenue` = gross merchandise value − promotion discount + shipping − completed refunds.
+
+### 6. Validate Gold
+
+These checks compare Gold with Silver after Gold has been built:
+
+- order count
+- net revenue
+- completed refunds
+- captured payments
+- item revenue
+- daily order totals
+
+Results are written to `ops.quality_checks` on the same `pipeline_run_id`. They cannot run on an empty Gold table. The order-count check would fail, and Gold would never load.
+
+### 7. Engine and UI
+
+A question goes from the Streamlit page to the API. The API writes a read-only `SELECT` on `gold.*`, runs it, and the UI draws a chart and a table from the same rows. Bronze and Silver are not queried.
+
+## Run it
+
+### Setup
+
+Put the raw files in `data/raw/` (`operational`, `events`, `inventory`, `reference`).
+
+Create `.env` for commands on your Mac. Do not commit it.
 
 ```text
-https://drive.google.com/drive/folders/1pJrx8eUprI1Z_CJeQDNbRbelrFzlIshy?usp=sharing
+ANALYTICS_DB_TARGET=local
+LOCAL_DATABASE_URL=postgresql://retail:retail@localhost:5432/retail_analytics
+NL2SQL_PROVIDER=openai
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4.1-mini
+NL2SQL_MAX_ROWS=100
 ```
 
-Dataset sengaja memiliki masalah yang umum dijumpai dalam sistem produksi:
+`LOCAL_DATABASE_URL` uses `localhost` because those commands run on the Mac. Inside Compose, the API and Airflow use host `postgres`. The provider and API key are read from `.env` when the API container starts.
 
-- Duplicate order dan duplicate event.
-- Split payment dan partial refund.
-- Event terlambat dan timestamp yang tidak berurutan.
-- Timestamp dengan timezone berbeda.
-- Missing reference ke customer, product, atau order.
-- Negative quantity.
-- Perubahan profil customer dan kategori product.
-- Order yang dibatalkan tetapi payment-nya sudah captured.
-- Inventory snapshot yang hilang.
-- Banyak promotion dan campaign yang berpotensi menggandakan fact.
+### Pipeline
 
-Di sisi lain, perusahaan sudah memiliki NL-to-SQL engine dan UI. Engine hanya
-dapat membaca tabel `gold.*`. Jika Bronze, Silver, dan Gold dibangun dengan
-tidak tepat, engine dapat menghasilkan analisis yang tampak benar tetapi
-sebenarnya salah.
-
-## 2. Tujuan Milestone
-
-Tujuan Anda adalah membangun pipeline data lokal dari data lake sampai ke
-analytical Gold layer PostgreSQL:
-
-```text
-Google Drive data lake
-        ↓
-Raw files lokal
-        ↓
-Bronze PostgreSQL
-        ↓
-Silver PostgreSQL
-        ↓
-Gold PostgreSQL
-        ↓
-NL-to-SQL engine
-        ↓
-Analisis dan visualisasi melalui UI
+```bash
+docker-compose up -d postgres airflow-init airflow-webserver airflow-scheduler
+docker-compose ps
 ```
 
-Anda harus:
+`airflow-init` should be exited with code 0. `postgres` should be healthy.
 
-1. Mengunduh dan memvalidasi raw data dari Google Drive.
-2. Mempertahankan source evidence ke Bronze tanpa mengubah payload asli.
-3. Mendesain Silver sebagai tabel typed, normalized, tervalidasi, dan memiliki
-   lineage.
-4. Membangun Gold dengan schema, grain, dan definisi metric yang sudah tetap.
-5. Menambahkan quality checks dan reconciliation yang membuktikan hasil
-   pipeline dapat dipercaya.
-6. Menjalankan pertanyaan analitik menggunakan engine yang telah disediakan.
+Open [http://localhost:8080](http://localhost:8080) and sign in as `admin` / `admin`. Trigger **retail_analytics_pipeline**.
 
-Anda tidak perlu membangun ulang LLM, NL-to-SQL engine, UI, Neon database,
-atau generator data. Komponen tersebut disediakan sebagai consumer dan alat
-verifikasi untuk pipeline Anda.
+A good run:
 
-## 3. Sasaran Pembelajaran
+- all seven tasks are green
+- `ops.pipeline_runs` has a new row with status `passed`
 
-Setelah menyelesaikan milestone ini, Anda diharapkan dapat:
+### UI
 
-- Mendesain pipeline multi-source dari data lake ke PostgreSQL.
-- Memisahkan source preservation, normalization, dan analytical modeling.
-- Menangani deduplication secara deterministik.
-- Merekonstruksi state dari event payment, refund, return, dan support.
-- Memilih versi customer atau product berdasarkan waktu transaksi.
-- Menggabungkan inventory dan campaign tanpa menggandakan fakta.
-- Menangani record invalid dan missing reference secara eksplisit.
-- Menjaga grain Gold table tetap konsisten.
-- Membuat quality checks untuk uniqueness, reconciliation, dan business rules.
-- Menjelaskan trade-off dan keputusan desain pipeline.
+Start this after Gold exists.
 
-## 4. Kontrak Gold Layer
-
-Gold schema tersedia di `database/schemas/gold.sql`. Jangan mengganti nama
-tabel, nama kolom, grain, tipe data, atau arti metric karena schema ini juga
-digunakan oleh Neon demo, NL-to-SQL engine, dan benchmark.
-
-| Tabel | Grain | Isi utama |
-|---|---|---|
-| `gold.order_360` | Satu baris per order | Nilai order, discount, payment, refund, return, promotion, dan status order |
-| `gold.customer_daily` | Satu customer per tanggal | Order, unit, revenue, refund, return, support, dan status customer |
-| `gold.product_daily` | Satu product per tanggal | Penjualan, revenue, refund unit, inventory, category, dan stockout |
-| `gold.channel_campaign_daily` | Satu tanggal, channel, dan campaign | Spend, attributed order/customer, revenue, refund, ROAS, dan conversion |
-| `gold.executive_kpis_daily` | Satu tanggal bisnis | Total order, revenue, AOV, refund rate, return rate, repeat rate, stockout rate, dan active customer |
-
-Contoh aturan yang harus konsisten:
-
-- `net_revenue = gross_merchandise_value - discount_amount + shipping_revenue - refunded_amount`.
-- `refund_rate` membandingkan order yang memiliki refund selesai dengan order
-  yang payment-nya captured.
-- `return_rate` menghitung order yang memiliki return event dibandingkan
-  dengan resolved order.
-- `roas` menghitung attributed net revenue dibagi campaign spend.
-- Setiap Gold table harus memiliki grain sesuai kontrak dan tidak boleh
-  mengalami fact multiplication.
-
-## 5. Pembagian Tanggung Jawab
-
-### Yang harus Anda bangun
-
-- `database/schemas/bronze.sql`
-- `database/schemas/silver.sql`
-- `database/schemas/ops.sql`
-- `pipelines/bronze/build_bronze.py`
-- `pipelines/silver/build_silver.py`
-- `pipelines/gold/build_gold.py`
-- Quality checks dan reconciliation queries.
-- Dokumentasi keputusan transformasi.
-
-### Yang sudah disediakan
-
-- Gold contract di `database/schemas/gold.sql`.
-- NL-to-SQL engine dan schema catalog.
-- ChatGPT-style UI.
-- Test harness dan benchmark.
-- Data generator untuk kebutuhan instructor.
-- Neon demo Gold-only dengan sample data.
-
-## 6. Data Lake Google Drive
-
-Download seluruh isi folder Google Drive ke `data/raw/`. Struktur lokal harus
-menjadi:
-
-```text
-data/raw/
-├── manifest.json
-├── operational/
-│   ├── customers.json
-│   ├── customer_profiles.json
-│   ├── customer_addresses.json
-│   ├── products.json
-│   ├── product_categories.json
-│   ├── stores.json
-│   ├── sales_channels.json
-│   ├── promotions.json
-│   ├── orders.json
-│   ├── order_items.json
-│   └── order_promotions.json
-├── events/
-│   ├── payment_events.json
-│   ├── refund_events.json
-│   ├── return_events.json
-│   ├── support_events.json
-│   └── web_events.json
-├── inventory/
-│   └── inventory_snapshots.csv
-└── reference/
-    ├── campaign_spend.csv
-    └── city_reference.json
+```bash
+docker-compose up -d --force-recreate nl2sql-api analytics-ui
 ```
 
-## 7. Arsitektur Pipeline
+Open [http://localhost:8501](http://localhost:8501). Ask a question. The page shows SQL, a chart, and a table.
 
-### Bronze
+## Evidence
 
-Bronze menyimpan source evidence yang immutable. Payload asli disimpan dalam
-bentuk `JSONB` atau representasi setara, bersama nama file, nomor baris, source
-record identifier, checksum, dan ingestion run.
-
-Bronze tidak boleh melakukan business join, deduplication, atau kalkulasi
-metric. Record invalid dan duplicate tetap dipertahankan di layer ini.
-
-### Silver
-
-Silver mengubah payload menjadi tabel bertipe dan ter-normalisasi. Terapkan:
-
-- Timestamp normalization ke UTC.
-- Deduplication dengan deterministic key.
-- Validasi foreign reference.
-- Status normalization.
-- Rejection untuk quantity negatif atau record invalid.
-- Event identity resolution.
-- Temporal version selection.
-- Lineage ke Bronze.
-- Penanganan late-arriving records.
-
-Record yang ditolak harus memiliki alasan di `silver.rejected_records` atau
-mekanisme setara yang terdokumentasi.
-
-### Gold
-
-Gold membaca Silver, bukan file mentah secara langsung. Bangun fact dan
-aggregate secara terpisah sebelum melakukan join ke promotion, campaign,
-inventory, atau event agar tidak terjadi penggandaan nilai.
-
-## 8. Orkestrasi dengan Airflow
-
-Pipeline wajib diorkestrasi menggunakan Airflow. Buat DAG pada file
-`dags/dag.py`; file ini menjadi entrypoint utama untuk menjalankan pipeline
-Anda. Jangan menjadikan perintah CLI manual sebagai pengganti DAG.
-
-DAG minimal harus memiliki tahapan berikut dengan dependency yang jelas:
-
-```text
-validate manifest dan raw files
-            ↓
-initialize PostgreSQL schemas
-            ↓
-load Bronze
-            ↓
-build Silver
-            ↓
-quality gate
-            ↓
-build Gold
-            ↓
-validate Gold dan record pipeline metadata
-```
-
-DAG harus:
-
-- Dapat dijalankan ulang tanpa menggandakan data.
-- Mengirim `pipeline_run_id` ke setiap layer.
-- Menghentikan tahap berikutnya jika quality gate gagal.
-- Menyimpan status dan error pipeline pada schema `ops`.
-- Menggunakan PostgreSQL lokal sebagai target pipeline.
-- Tidak mengunggah Bronze atau Silver ke Neon.
-
-Anda tetap boleh membuat modul Python atau SQL tambahan, tetapi seluruh
-pipeline harus dapat ditelusuri dari `dags/dag.py`.
-
-## 9. Menjalankan Agent dengan UV
-
-Untuk menjalankan NL-to-SQL agent dan ChatGPT-style UI, UV sudah cukup.
-Docker Compose tidak diperlukan jika agent menggunakan Gold sample di Neon.
-
-### Mode Neon demo
-
-Pastikan `.env` lokal berisi koneksi Neon dan OpenAI API key. File ini hanya
-untuk komputer Anda dan tidak boleh di-upload ke GitHub. Jalankan konfigurasi
-berikut di terminal PowerShell pertama:
-
-```powershell
-uv sync
-uv run python -m uvicorn engine.api.main:app --port 8000
-```
-
-Pada terminal kedua, jalankan UI:
-
-```powershell
-uv run python -m streamlit run ui/app.py --server.port 8501
-```
-
-Buka `http://localhost:8501`. UI berkomunikasi dengan agent melalui API dan
-tidak mengakses database atau OpenAI secara langsung.
-
-## 10. File yang Wajib Diunggah ke GitHub
-
-Submission hanya perlu berisi artefak implementasi berikut:
-
-```text
-submission/
-├── dags/
-│   └── dag.py
-├── database/schemas/
-│   ├── bronze.sql
-│   ├── silver.sql
-│   └── ops.sql
-├── pipelines/
-│   ├── bronze/build_bronze.py
-│   ├── silver/build_silver.py
-│   └── gold/build_gold.py
-└── evidence/
-    ├── airflow_run.png
-    └── sample_engine_queries.md
-```
-
-`database/schemas/gold.sql` tidak perlu dikumpulkan ulang karena merupakan
-schema contract yang sudah diberikan. File berikut juga tidak perlu dikirim:
-
-- `.env` atau `.env.example`.
-- `pyproject.toml` atau `requirements.txt`.
-- Folder `tests/`.
-- `data_contract_notes.md`.
-- `architecture.md`.
-- `README.md` atau README tambahan.
-- Dataset penuh, `.venv`, cache, dan folder `solution/`.
-
-Jangan upload API key atau password database dalam bentuk apa pun.
-
-## 10. Rubrik Penilaian
-
-| Komponen | Bobot | Indikator |
-|---|---:|---|
-| Bronze ingestion dan source preservation | 15% | Semua input dipertahankan, lineage jelas, append-only/idempotent, manifest tervalidasi |
-| Silver normalization dan quality handling | 25% | Tipe data, UTC, deduplication, referential checks, rejection, dan temporal logic benar |
-| Gold transformation dan grain | 30% | Lima tabel terisi, grain benar, metric benar, tidak ada fact multiplication |
-| Reconciliation dan quality gate | 15% | Pipeline mendeteksi duplikasi, revenue mismatch, refund mismatch, dan broken transformation |
-| Airflow orchestration dan reproducibility | 15% | DAG memiliki dependency yang benar, rerunnable, memiliki failure handling, dan mencatat metadata |
-| **Total** | **100%** | |
-
-
-> **Catatan:** Neon hanya berisi sample Gold untuk demo instructor. Pipeline
-> peserta harus berjalan di PostgreSQL lokal dan tidak meng-upload Bronze atau
-> Silver ke Neon.
+| File                                                                   | What it shows                              |
+| ---------------------------------------------------------------------- | ------------------------------------------ |
+| [evidence/airflow_run.png](evidence/airflow_run.png)                   | A green DAG run                            |
+| [evidence/sample_engine_queries.md](evidence/sample_engine_queries.md) | Questions, SQL, and the charts the UI drew |
