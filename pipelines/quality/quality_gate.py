@@ -1,7 +1,7 @@
-"""Run the quality gate against local Postgres.
+"""Run the quality gate on Silver before Gold is built.
 
-Each check compares two totals. A failed check is stored in ops.quality_checks
-and this module exits so a later pipeline step can stop.
+A failed check is stored in ops.quality_checks and this module exits so Gold
+does not run.
 """
 
 from __future__ import annotations
@@ -15,15 +15,15 @@ from shared.db import connect
 
 logger = logging.getLogger(__name__)
 
-SQL_PATH = Path(__file__).with_name("build_quality.sql")
+SQL_PATH = Path(__file__).with_name("quality_gate.sql")
 
 
-def build_quality(pipeline_run_id: str | None = None) -> list[tuple[str, str]]:
-    """Record the six checks and return each check name with its status."""
+def quality_gate(pipeline_run_id: str | None = None) -> list[tuple[str, str]]:
+    """Record the Silver checks and return each check name with its status."""
     run_id = pipeline_run_id or str(uuid.uuid4())
     check_sql = SQL_PATH.read_text(encoding="utf-8").replace("{{pipeline_run_id}}", run_id)
     with connect("local") as connection:
-        logger.info("Recording quality run %s", run_id)
+        logger.info("Recording quality gate %s", run_id)
         connection.execute(
             """
             INSERT INTO ops.pipeline_runs (pipeline_run_id, status)
@@ -68,7 +68,7 @@ def build_quality(pipeline_run_id: str | None = None) -> list[tuple[str, str]]:
 def main() -> None:
     """Run the quality gate and stop when any check fails."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    results = build_quality()
+    results = quality_gate()
     for check_name, status in results:
         print(f"{check_name} {status}")
     if any(status != "passed" for _, status in results):
