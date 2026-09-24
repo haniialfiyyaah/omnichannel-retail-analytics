@@ -40,3 +40,13 @@ CREATE TABLE IF NOT EXISTS silver.order_items (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per customer_id. Profile and address versions are later tables.
+CREATE TABLE IF NOT EXISTS silver.customers (
+    customer_id TEXT PRIMARY KEY,
+    city_id TEXT NOT NULL,
+    customer_segment TEXT NOT NULL,
+    created_at_utc TIMESTAMPTZ NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

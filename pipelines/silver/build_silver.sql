@@ -116,4 +116,28 @@ ORDER BY
     payload->>'order_item_id',
     source_line_number DESC;
 
+-- One row per customer_id. A repeated id keeps the higher source_line_number.
+DELETE FROM silver.customers;
+
+INSERT INTO silver.customers (
+    customer_id,
+    city_id,
+    customer_segment,
+    created_at_utc,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT DISTINCT ON (payload->>'customer_id')
+    payload->>'customer_id',
+    payload->>'city_id',
+    payload->>'customer_segment',
+    (payload->>'created_at_utc')::timestamptz,
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/customers.json'
+ORDER BY
+    payload->>'customer_id',
+    source_line_number DESC;
+
 COMMIT;
