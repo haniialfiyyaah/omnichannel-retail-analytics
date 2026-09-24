@@ -62,3 +62,14 @@ CREATE TABLE IF NOT EXISTS silver.customer_profiles (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One address version per row. This file has one version per customer.
+CREATE TABLE IF NOT EXISTS silver.customer_addresses (
+    address_id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL,
+    city_id TEXT NOT NULL,
+    valid_from_utc TIMESTAMPTZ NOT NULL,
+    valid_to_utc TIMESTAMPTZ NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

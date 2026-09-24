@@ -165,4 +165,27 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'operational/customer_profiles.json';
 
+-- Keep every address row, including its valid_from and valid_to window.
+DELETE FROM silver.customer_addresses;
+
+INSERT INTO silver.customer_addresses (
+    address_id,
+    customer_id,
+    city_id,
+    valid_from_utc,
+    valid_to_utc,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'address_id',
+    payload->>'customer_id',
+    payload->>'city_id',
+    (payload->>'valid_from_utc')::timestamptz,
+    (payload->>'valid_to_utc')::timestamptz,
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/customer_addresses.json';
+
 COMMIT;
