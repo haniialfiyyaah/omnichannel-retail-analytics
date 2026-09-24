@@ -161,3 +161,15 @@ CREATE TABLE IF NOT EXISTS silver.refund_events (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per winning return event_id.
+CREATE TABLE IF NOT EXISTS silver.return_events (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    occurred_at_utc TIMESTAMPTZ NOT NULL,
+    ingested_at_utc TIMESTAMPTZ NOT NULL,
+    order_id TEXT NOT NULL,
+    return_id TEXT NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

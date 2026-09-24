@@ -381,4 +381,33 @@ ORDER BY
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
 
+-- One winner per return event_id.
+DELETE FROM silver.return_events;
+
+INSERT INTO silver.return_events (
+    event_id,
+    event_type,
+    occurred_at_utc,
+    ingested_at_utc,
+    order_id,
+    return_id,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT DISTINCT ON (payload->>'event_id')
+    payload->>'event_id',
+    payload->>'event_type',
+    (payload->>'occurred_at_utc')::timestamptz,
+    (payload->>'ingested_at_utc')::timestamptz,
+    payload->'payload'->>'order_id',
+    payload->'payload'->>'return_id',
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/return_events.json'
+ORDER BY
+    payload->>'event_id',
+    (payload->>'occurred_at_utc')::timestamptz DESC,
+    source_line_number DESC;
+
 COMMIT;
