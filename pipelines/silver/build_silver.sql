@@ -318,4 +318,36 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'operational/order_promotions.json';
 
+-- One winner per event_id. Latest occurred_at_utc wins, then the higher source line.
+-- A repeated order_id is another payment and stays.
+DELETE FROM silver.payment_events;
+
+INSERT INTO silver.payment_events (
+    event_id,
+    event_type,
+    occurred_at_utc,
+    ingested_at_utc,
+    order_id,
+    payment_id,
+    amount,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT DISTINCT ON (payload->>'event_id')
+    payload->>'event_id',
+    payload->>'event_type',
+    (payload->>'occurred_at_utc')::timestamptz,
+    (payload->>'ingested_at_utc')::timestamptz,
+    payload->'payload'->>'order_id',
+    payload->'payload'->>'payment_id',
+    (payload->'payload'->>'amount')::numeric(14, 2),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/payment_events.json'
+ORDER BY
+    payload->>'event_id',
+    (payload->>'occurred_at_utc')::timestamptz DESC,
+    source_line_number DESC;
+
 COMMIT;

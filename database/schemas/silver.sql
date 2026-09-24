@@ -135,3 +135,16 @@ CREATE TABLE IF NOT EXISTS silver.order_promotions (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per winning event_id. Several payments on one order stay.
+CREATE TABLE IF NOT EXISTS silver.payment_events (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    occurred_at_utc TIMESTAMPTZ NOT NULL,
+    ingested_at_utc TIMESTAMPTZ NOT NULL,
+    order_id TEXT NOT NULL,
+    payment_id TEXT NOT NULL,
+    amount NUMERIC(14, 2) NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
