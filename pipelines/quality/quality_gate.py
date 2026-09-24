@@ -28,6 +28,8 @@ def quality_gate(pipeline_run_id: str | None = None) -> list[tuple[str, str]]:
             """
             INSERT INTO ops.pipeline_runs (pipeline_run_id, status)
             VALUES (%s, 'running')
+            ON CONFLICT (pipeline_run_id) DO UPDATE
+            SET status = 'running', finished_at = NULL, error_message = NULL
             """,
             (run_id,),
         )

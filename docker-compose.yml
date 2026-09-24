@@ -50,5 +50,54 @@ services:
     volumes:
       - ./:/app
 
+  airflow-init:
+    image: apache/airflow:2.10.5
+    entrypoint: ["bash", "/opt/airflow/project/docker/airflow-entrypoint.sh"]
+    command: ["init"]
+    environment: &airflow-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__CORE__FERNET_KEY: ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg=
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://retail:retail@postgres:5432/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: retail-local-airflow
+      LOCAL_DATABASE_URL: postgresql://retail:retail@postgres:5432/retail_analytics
+      PYTHONPATH: /opt/airflow/project
+      PYTHONDONTWRITEBYTECODE: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes: &airflow-volumes
+      - ./dags:/opt/airflow/dags
+      - ./:/opt/airflow/project
+      - airflow_logs:/opt/airflow/logs
+
+  airflow-webserver:
+    image: apache/airflow:2.10.5
+    entrypoint: ["bash", "/opt/airflow/project/docker/airflow-entrypoint.sh"]
+    command: ["webserver"]
+    environment: *airflow-env
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    volumes: *airflow-volumes
+
+  airflow-scheduler:
+    image: apache/airflow:2.10.5
+    entrypoint: ["bash", "/opt/airflow/project/docker/airflow-entrypoint.sh"]
+    command: ["scheduler"]
+    environment: *airflow-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    volumes: *airflow-volumes
+
 volumes:
   retail_postgres_data:
+  airflow_logs:
