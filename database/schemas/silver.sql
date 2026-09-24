@@ -187,3 +187,18 @@ CREATE TABLE IF NOT EXISTS silver.support_events (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per winning web event. A blank campaign_id stays null.
+CREATE TABLE IF NOT EXISTS silver.web_events (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    occurred_at_utc TIMESTAMPTZ NOT NULL,
+    ingested_at_utc TIMESTAMPTZ NOT NULL,
+    order_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    campaign_id TEXT,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

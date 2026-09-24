@@ -443,4 +443,39 @@ ORDER BY
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
 
+-- One winner per web event_id. A blank campaign_id is kept as null.
+DELETE FROM silver.web_events;
+
+INSERT INTO silver.web_events (
+    event_id,
+    event_type,
+    occurred_at_utc,
+    ingested_at_utc,
+    order_id,
+    customer_id,
+    session_id,
+    channel,
+    campaign_id,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT DISTINCT ON (payload->>'event_id')
+    payload->>'event_id',
+    payload->>'event_type',
+    (payload->>'occurred_at_utc')::timestamptz,
+    (payload->>'ingested_at_utc')::timestamptz,
+    payload->'payload'->>'order_id',
+    payload->'payload'->>'customer_id',
+    payload->'payload'->>'session_id',
+    payload->'payload'->>'channel',
+    NULLIF(payload->'payload'->>'campaign_id', ''),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/web_events.json'
+ORDER BY
+    payload->>'event_id',
+    (payload->>'occurred_at_utc')::timestamptz DESC,
+    source_line_number DESC;
+
 COMMIT;
