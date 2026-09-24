@@ -297,4 +297,25 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'operational/promotions.json';
 
+-- Keep every order-promotion row. Several promotions on one order stay.
+DELETE FROM silver.order_promotions;
+
+INSERT INTO silver.order_promotions (
+    promotion_row_id,
+    order_id,
+    promotion_id,
+    discount_amount,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'source_row_id',
+    payload->>'order_id',
+    payload->>'promotion_id',
+    (payload->>'discount_amount')::numeric(14, 2),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/order_promotions.json';
+
 COMMIT;

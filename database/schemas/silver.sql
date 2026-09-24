@@ -125,3 +125,13 @@ CREATE TABLE IF NOT EXISTS silver.promotions (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per order-promotion link. An order can have more than one promotion.
+CREATE TABLE IF NOT EXISTS silver.order_promotions (
+    promotion_row_id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    promotion_id TEXT NOT NULL,
+    discount_amount NUMERIC(14, 2) NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
