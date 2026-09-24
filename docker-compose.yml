@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: retail_analytics
-      POSTGRES_USER: retail
-      POSTGRES_PASSWORD: retail
+      POSTGRES_DB: ${POSTGRES_DB:-retail_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-retail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-retail}
     ports:
       - "5432:5432"
     healthcheck:
@@ -18,9 +18,21 @@ services:
   nl2sql-api:
     build: .
     environment:
-      ANALYTICS_DB_TARGET: local
-      NL2SQL_PROVIDER: mock
-      LOCAL_DATABASE_URL: postgresql://retail:retail@postgres:5432/retail_analytics
+      ANALYTICS_DB_TARGET: ${ANALYTICS_DB_TARGET:-local}
+      NL2SQL_PROVIDER: ${NL2SQL_PROVIDER:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      NL2SQL_MAX_ROWS: ${NL2SQL_MAX_ROWS:-100}
+      NEON_DATABASE_URL: ${NEON_DATABASE_URL:-}
+      POSTGRES_HOST: ${POSTGRES_HOST:-}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-retail_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-retail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-retail}
+      POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-require}
+      # .env uses localhost for a Mac process. Inside Compose the host is postgres.
+      LOCAL_DATABASE_URL: postgresql://${POSTGRES_USER:-retail}:${POSTGRES_PASSWORD:-retail}@postgres:5432/${POSTGRES_DB:-retail_analytics}
     ports:
       - "8000:8000"
     depends_on:
@@ -50,9 +62,12 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       AIRFLOW__CORE__FERNET_KEY: ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg=
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://retail:retail@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-retail}:${POSTGRES_PASSWORD:-retail}@postgres:5432/airflow
       AIRFLOW__WEBSERVER__SECRET_KEY: retail-local-airflow
-      LOCAL_DATABASE_URL: postgresql://retail:retail@postgres:5432/retail_analytics
+      POSTGRES_DB: ${POSTGRES_DB:-retail_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-retail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-retail}
+      LOCAL_DATABASE_URL: postgresql://${POSTGRES_USER:-retail}:${POSTGRES_PASSWORD:-retail}@postgres:5432/${POSTGRES_DB:-retail_analytics}
       PYTHONPATH: /opt/airflow/project
       PYTHONDONTWRITEBYTECODE: "1"
     depends_on:

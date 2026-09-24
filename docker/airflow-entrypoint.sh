@@ -9,12 +9,14 @@ if [[ "${1:-}" == "init" ]]; then
   python - <<'PY'
 import pg8000.dbapi
 
+import os
+
 connection = pg8000.dbapi.connect(
-    user="retail",
-    password="retail",
+    user=os.environ.get("POSTGRES_USER", "retail"),
+    password=os.environ.get("POSTGRES_PASSWORD", "retail"),
     host="postgres",
-    port=5432,
-    database="retail_analytics",
+    port=int(os.environ.get("POSTGRES_PORT", "5432")),
+    database=os.environ.get("POSTGRES_DB", "retail_analytics"),
 )
 connection.autocommit = True
 cursor = connection.cursor()
