@@ -431,4 +431,107 @@ LEFT JOIN (
     AND sessions.sales_channel = keys.sales_channel
     AND sessions.campaign_id = keys.campaign_id;
 
+-- One row per business date. Rates use the order and product rows already summed.
+DELETE FROM gold.executive_kpis_daily;
+
+INSERT INTO gold.executive_kpis_daily (
+    metric_date,
+    total_orders,
+    gross_revenue,
+    net_revenue,
+    average_order_value,
+    refund_rate,
+    return_rate,
+    repeat_customer_rate,
+    stockout_rate,
+    active_customers,
+    support_contact_rate,
+    data_freshness_utc,
+    pipeline_run_id
+)
+SELECT
+    days.metric_date,
+    COALESCE(orders.total_orders, 0),
+    COALESCE(orders.gross_revenue, 0),
+    COALESCE(orders.net_revenue, 0),
+    CASE
+        WHEN COALESCE(orders.total_orders, 0) = 0 THEN 0
+        ELSE orders.net_revenue / orders.total_orders
+    END AS average_order_value,
+    CASE
+        WHEN COALESCE(orders.captured_orders, 0) = 0 THEN 0
+        ELSE orders.refunded_orders::numeric / orders.captured_orders
+    END AS refund_rate,
+    CASE
+        WHEN COALESCE(orders.total_orders, 0) = 0 THEN 0
+        ELSE orders.returned_orders::numeric / orders.total_orders
+    END AS return_rate,
+    CASE
+        WHEN COALESCE(customers.ordering_customers, 0) = 0 THEN 0
+        ELSE customers.repeat_customers::numeric / customers.ordering_customers
+    END AS repeat_customer_rate,
+    CASE
+        WHEN COALESCE(products.snapshot_products, 0) = 0 THEN 0
+        ELSE products.stockout_products::numeric / products.snapshot_products
+    END AS stockout_rate,
+    COALESCE(customers.ordering_customers, 0) AS active_customers,
+    CASE
+        WHEN COALESCE(orders.total_orders, 0) = 0 THEN 0
+        ELSE COALESCE(customers.support_contacts, 0)::numeric / orders.total_orders
+    END AS support_contact_rate,
+    freshness.latest_ingested_at_utc,
+    COALESCE(orders.pipeline_run_id, products.pipeline_run_id, freshness.pipeline_run_id)
+FROM (
+    SELECT order_date AS metric_date FROM gold.order_360
+    UNION
+    SELECT metric_date FROM gold.product_daily
+) AS days
+LEFT JOIN (
+    SELECT
+        order_date AS metric_date,
+        COUNT(*) AS total_orders,
+        SUM(gross_merchandise_value) AS gross_revenue,
+        SUM(net_revenue) AS net_revenue,
+        COUNT(*) FILTER (WHERE refunded_amount > 0) AS refunded_orders,
+        COUNT(*) FILTER (WHERE payment_status = 'CAPTURED') AS captured_orders,
+        COUNT(*) FILTER (WHERE return_status = 'RETURNED') AS returned_orders,
+        MAX(pipeline_run_id) AS pipeline_run_id
+    FROM gold.order_360
+    GROUP BY order_date
+) AS orders ON orders.metric_date = days.metric_date
+LEFT JOIN (
+    SELECT
+        metric_date,
+        COUNT(*) FILTER (WHERE order_count > 0) AS ordering_customers,
+        COUNT(*) FILTER (WHERE order_count > 0 AND repeat_customer_flag) AS repeat_customers,
+        SUM(support_contacts) AS support_contacts
+    FROM gold.customer_daily
+    GROUP BY metric_date
+) AS customers ON customers.metric_date = days.metric_date
+LEFT JOIN (
+    SELECT
+        metric_date,
+        COUNT(*) FILTER (WHERE stockout_flag IS NOT NULL) AS snapshot_products,
+        COUNT(*) FILTER (WHERE stockout_flag) AS stockout_products,
+        MAX(pipeline_run_id) AS pipeline_run_id
+    FROM gold.product_daily
+    GROUP BY metric_date
+) AS products ON products.metric_date = days.metric_date
+CROSS JOIN (
+    SELECT
+        MAX(ingested_at_utc) AS latest_ingested_at_utc,
+        MAX(pipeline_run_id) AS pipeline_run_id
+    FROM (
+        SELECT ingested_at_utc, pipeline_run_id FROM silver.payment_events
+        UNION ALL
+        SELECT ingested_at_utc, pipeline_run_id FROM silver.refund_events
+        UNION ALL
+        SELECT ingested_at_utc, pipeline_run_id FROM silver.return_events
+        UNION ALL
+        SELECT ingested_at_utc, pipeline_run_id FROM silver.support_events
+        UNION ALL
+        SELECT ingested_at_utc, pipeline_run_id FROM silver.web_events
+    ) AS ingested
+) AS freshness;
+
 COMMIT;

@@ -36,6 +36,9 @@ def build_gold() -> list[tuple[str, int]]:
             SELECT 'gold.channel_campaign_daily', count(*)
             FROM gold.channel_campaign_daily
             UNION ALL
+            SELECT 'gold.executive_kpis_daily', count(*)
+            FROM gold.executive_kpis_daily
+            UNION ALL
             SELECT 'silver.orders', count(*)
             FROM silver.orders
             ORDER BY label
