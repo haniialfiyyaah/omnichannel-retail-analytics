@@ -105,3 +105,11 @@ CREATE TABLE IF NOT EXISTS silver.stores (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per sales channel. Orders store this value in sales_channel.
+CREATE TABLE IF NOT EXISTS silver.sales_channels (
+    channel_id TEXT PRIMARY KEY,
+    channel_name TEXT NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

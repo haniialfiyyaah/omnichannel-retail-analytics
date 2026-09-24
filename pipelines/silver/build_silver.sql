@@ -255,4 +255,21 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'operational/stores.json';
 
+-- One row per channel_id.
+DELETE FROM silver.sales_channels;
+
+INSERT INTO silver.sales_channels (
+    channel_id,
+    channel_name,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'channel_id',
+    payload->>'channel_name',
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/sales_channels.json';
+
 COMMIT;
