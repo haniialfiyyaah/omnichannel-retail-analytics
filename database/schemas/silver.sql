@@ -1,0 +1,30 @@
+-- Silver is the typed layer. It reads bronze.raw_records.
+-- This file only creates empty tables. pipelines/silver/build_silver.sql fills them.
+
+CREATE SCHEMA IF NOT EXISTS silver;
+
+-- One row per Bronze row that Silver refuses to keep, with a reason.
+CREATE TABLE IF NOT EXISTS silver.rejected_records (
+    rejected_row_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    bronze_row_id BIGINT NOT NULL,
+    source_file TEXT NOT NULL,
+    source_record_id TEXT,
+    rejection_reason TEXT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
+
+-- One row per winning order_id. Duplicate copies stay in Bronze and are not rejections.
+CREATE TABLE IF NOT EXISTS silver.orders (
+    order_id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL,
+    ordered_at_utc TIMESTAMPTZ NOT NULL,
+    updated_at_utc TIMESTAMPTZ NOT NULL,
+    sales_channel TEXT NOT NULL,
+    -- Null when the order has no physical store.
+    store_id TEXT,
+    status TEXT NOT NULL,
+    shipping_revenue NUMERIC(14, 2) NOT NULL,
+    -- The Bronze row that won. The losing copies are not stored here.
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
