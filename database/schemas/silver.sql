@@ -173,3 +173,17 @@ CREATE TABLE IF NOT EXISTS silver.return_events (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per winning support event. A blank reason stays null.
+CREATE TABLE IF NOT EXISTS silver.support_events (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    occurred_at_utc TIMESTAMPTZ NOT NULL,
+    ingested_at_utc TIMESTAMPTZ NOT NULL,
+    order_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    ticket_id TEXT NOT NULL,
+    reason TEXT,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

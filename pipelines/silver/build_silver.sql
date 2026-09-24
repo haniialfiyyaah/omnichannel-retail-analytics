@@ -410,4 +410,37 @@ ORDER BY
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
 
+-- One winner per support event_id. A blank reason is kept as null.
+DELETE FROM silver.support_events;
+
+INSERT INTO silver.support_events (
+    event_id,
+    event_type,
+    occurred_at_utc,
+    ingested_at_utc,
+    order_id,
+    customer_id,
+    ticket_id,
+    reason,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT DISTINCT ON (payload->>'event_id')
+    payload->>'event_id',
+    payload->>'event_type',
+    (payload->>'occurred_at_utc')::timestamptz,
+    (payload->>'ingested_at_utc')::timestamptz,
+    payload->'payload'->>'order_id',
+    payload->'payload'->>'customer_id',
+    payload->'payload'->>'ticket_id',
+    NULLIF(payload->'payload'->>'reason', ''),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/support_events.json'
+ORDER BY
+    payload->>'event_id',
+    (payload->>'occurred_at_utc')::timestamptz DESC,
+    source_line_number DESC;
+
 COMMIT;
