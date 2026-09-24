@@ -83,3 +83,15 @@ CREATE TABLE IF NOT EXISTS silver.products (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- Every category version stays. product_id repeats when a product changes category.
+CREATE TABLE IF NOT EXISTS silver.product_categories (
+    category_row_id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL,
+    category_id TEXT NOT NULL,
+    category_name TEXT NOT NULL,
+    valid_from_utc TIMESTAMPTZ NOT NULL,
+    valid_to_utc TIMESTAMPTZ NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

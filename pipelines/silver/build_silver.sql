@@ -209,4 +209,29 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'operational/products.json';
 
+-- Keep every category version. A repeated product_id is a second version, not a duplicate.
+DELETE FROM silver.product_categories;
+
+INSERT INTO silver.product_categories (
+    category_row_id,
+    product_id,
+    category_id,
+    category_name,
+    valid_from_utc,
+    valid_to_utc,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'source_row_id',
+    payload->>'product_id',
+    payload->>'category_id',
+    payload->>'category_name',
+    (payload->>'valid_from_utc')::timestamptz,
+    (payload->>'valid_to_utc')::timestamptz,
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/product_categories.json';
+
 COMMIT;
