@@ -28,3 +28,15 @@ CREATE TABLE IF NOT EXISTS silver.orders (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per order item that passed the checks. A rejected item does not remove its order.
+CREATE TABLE IF NOT EXISTS silver.order_items (
+    order_item_id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit_price NUMERIC(14, 2) NOT NULL,
+    item_discount_amount NUMERIC(14, 2) NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);

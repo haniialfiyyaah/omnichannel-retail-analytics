@@ -17,20 +17,37 @@ logger = logging.getLogger(__name__)
 SQL_PATH = Path(__file__).with_name("build_silver.sql")
 
 
-def build_silver() -> int:
-    """Apply build_silver.sql and return how many orders Silver kept."""
+def build_silver() -> list[tuple[str, int]]:
+    """Apply build_silver.sql and return kept and rejected counts."""
     # "local" is required. connect() with no argument opens the Neon demo.
     with connect("local") as connection:
         logger.info("Applying %s", SQL_PATH.name)
         apply_sql_file(connection, SQL_PATH)
-        row = connection.execute("SELECT count(*) FROM silver.orders").fetchone()
-    return int(row[0])
+        rows = connection.execute(
+            """
+            SELECT label, row_count
+            FROM (
+                SELECT 'silver.orders' AS label, count(*) AS row_count
+                FROM silver.orders
+                UNION ALL
+                SELECT 'silver.order_items', count(*)
+                FROM silver.order_items
+                UNION ALL
+                SELECT 'rejected.' || rejection_reason, count(*)
+                FROM silver.rejected_records
+                GROUP BY rejection_reason
+            ) AS counts
+            ORDER BY label
+            """
+        ).fetchall()
+    return [(str(label), int(row_count)) for label, row_count in rows]
 
 
 def main() -> None:
-    """Run the Silver orders load and print the kept row count."""
+    """Run the Silver load and print kept and rejected counts."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    print(f"silver.orders {build_silver()}")
+    for label, row_count in build_silver():
+        print(f"{label} {row_count}")
 
 
 if __name__ == "__main__":

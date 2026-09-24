@@ -1,6 +1,6 @@
--- Fill silver.orders from bronze.raw_records.
--- This slice loads orders only. Other Silver tables are later slices.
--- Duplicate order_id copies stay in Bronze. They are not rejections.
+-- Fill silver.orders and silver.order_items from bronze.raw_records.
+-- A rejected item stays out of silver.order_items. Its order stays in silver.orders.
+-- Duplicate copies stay in Bronze. They are not rejections.
 
 BEGIN;
 
@@ -37,6 +37,83 @@ WHERE source_file = 'operational/orders.json'
 ORDER BY
     payload->>'order_id',
     (payload->>'updated_at_utc')::timestamptz DESC,
+    source_line_number DESC;
+
+-- Replace the previous item load and its rejection reasons.
+DELETE FROM silver.order_items;
+DELETE FROM silver.rejected_records
+WHERE source_file = 'operational/order_items.json';
+
+-- A negative quantity rejects that item row only.
+INSERT INTO silver.rejected_records (
+    bronze_row_id,
+    source_file,
+    source_record_id,
+    rejection_reason,
+    pipeline_run_id
+)
+SELECT
+    bronze_row_id,
+    source_file,
+    payload->>'order_item_id',
+    'negative_quantity',
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/order_items.json'
+  AND (payload->>'quantity')::numeric < 0;
+
+-- A product id that is not in the products file rejects that item row only.
+INSERT INTO silver.rejected_records (
+    bronze_row_id,
+    source_file,
+    source_record_id,
+    rejection_reason,
+    pipeline_run_id
+)
+SELECT
+    items.bronze_row_id,
+    items.source_file,
+    items.payload->>'order_item_id',
+    'missing_product',
+    items.pipeline_run_id
+FROM bronze.raw_records AS items
+WHERE items.source_file = 'operational/order_items.json'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM bronze.raw_records AS products
+      WHERE products.source_file = 'operational/products.json'
+        AND products.payload->>'product_id' = items.payload->>'product_id'
+  );
+
+-- Keep item rows that were not rejected. One row per order_item_id.
+INSERT INTO silver.order_items (
+    order_item_id,
+    order_id,
+    product_id,
+    quantity,
+    unit_price,
+    item_discount_amount,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT DISTINCT ON (payload->>'order_item_id')
+    payload->>'order_item_id',
+    payload->>'order_id',
+    payload->>'product_id',
+    (payload->>'quantity')::integer,
+    (payload->>'unit_price')::numeric(14, 2),
+    (payload->>'item_discount_amount')::numeric(14, 2),
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/order_items.json'
+  AND bronze_row_id NOT IN (
+      SELECT bronze_row_id
+      FROM silver.rejected_records
+      WHERE source_file = 'operational/order_items.json'
+  )
+ORDER BY
+    payload->>'order_item_id',
     source_line_number DESC;
 
 COMMIT;
