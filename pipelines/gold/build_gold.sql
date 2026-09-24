@@ -201,4 +201,122 @@ LEFT JOIN (
     GROUP BY customer_id
 ) AS first_orders ON first_orders.customer_id = days.customer_id;
 
+-- One row per product and business date.
+-- Item money is summed per product before it is joined to inventory or category.
+DELETE FROM gold.product_daily;
+
+INSERT INTO gold.product_daily (
+    product_id,
+    metric_date,
+    active_category,
+    units_sold,
+    order_count,
+    gross_revenue,
+    net_revenue,
+    refunded_units,
+    available_inventory,
+    reserved_inventory,
+    stockout_flag,
+    promotion_count,
+    pipeline_run_id
+)
+SELECT
+    days.product_id,
+    days.metric_date,
+    categories.category_name,
+    COALESCE(sales.units_sold, 0),
+    COALESCE(sales.order_count, 0),
+    COALESCE(sales.gross_revenue, 0),
+    COALESCE(sales.net_revenue, 0),
+    COALESCE(sales.refunded_units, 0),
+    inventory.available_inventory,
+    inventory.reserved_inventory,
+    CASE
+        WHEN inventory.product_id IS NULL THEN NULL
+        WHEN inventory.available_inventory = 0 THEN TRUE
+        ELSE FALSE
+    END AS stockout_flag,
+    COALESCE(product_promotions.promotion_count, 0),
+    COALESCE(sales.pipeline_run_id, inventory.pipeline_run_id)
+FROM (
+    SELECT product_id, metric_date FROM (
+        SELECT DISTINCT
+            items.product_id,
+            orders.order_date AS metric_date
+        FROM silver.order_items AS items
+        JOIN gold.order_360 AS orders ON orders.order_id = items.order_id
+        UNION
+        SELECT DISTINCT product_id, snapshot_date
+        FROM silver.inventory_snapshots
+    ) AS product_days
+) AS days
+LEFT JOIN (
+    SELECT
+        lines.product_id,
+        lines.metric_date,
+        SUM(lines.quantity) AS units_sold,
+        COUNT(DISTINCT lines.order_id) AS order_count,
+        SUM(lines.line_amount) AS gross_revenue,
+        SUM(lines.allocated_net_revenue) AS net_revenue,
+        SUM(lines.refunded_units) AS refunded_units,
+        MAX(lines.pipeline_run_id) AS pipeline_run_id
+    FROM (
+        SELECT
+            items.product_id,
+            items.order_id,
+            orders.order_date AS metric_date,
+            items.quantity,
+            items.quantity * items.unit_price AS line_amount,
+            CASE
+                WHEN SUM(items.quantity * items.unit_price) OVER (PARTITION BY items.order_id) = 0 THEN 0
+                ELSE orders.net_revenue
+                    * (items.quantity * items.unit_price)
+                    / SUM(items.quantity * items.unit_price) OVER (PARTITION BY items.order_id)
+            END AS allocated_net_revenue,
+            CASE
+                WHEN orders.refunded_amount > 0 THEN items.quantity
+                ELSE 0
+            END AS refunded_units,
+            orders.pipeline_run_id
+        FROM silver.order_items AS items
+        JOIN gold.order_360 AS orders ON orders.order_id = items.order_id
+    ) AS lines
+    GROUP BY lines.product_id, lines.metric_date
+) AS sales
+    ON sales.product_id = days.product_id
+    AND sales.metric_date = days.metric_date
+LEFT JOIN (
+    SELECT
+        product_id,
+        snapshot_date AS metric_date,
+        SUM(available_quantity) AS available_inventory,
+        SUM(reserved_quantity) AS reserved_inventory,
+        MAX(pipeline_run_id) AS pipeline_run_id
+    FROM silver.inventory_snapshots
+    GROUP BY product_id, snapshot_date
+) AS inventory
+    ON inventory.product_id = days.product_id
+    AND inventory.metric_date = days.metric_date
+LEFT JOIN (
+    SELECT
+        items.product_id,
+        orders.order_date AS metric_date,
+        COUNT(DISTINCT promotions.promotion_id) AS promotion_count
+    FROM silver.order_items AS items
+    JOIN gold.order_360 AS orders ON orders.order_id = items.order_id
+    JOIN silver.order_promotions AS promotions ON promotions.order_id = items.order_id
+    GROUP BY items.product_id, orders.order_date
+) AS product_promotions
+    ON product_promotions.product_id = days.product_id
+    AND product_promotions.metric_date = days.metric_date
+LEFT JOIN LATERAL (
+    SELECT category_name
+    FROM silver.product_categories AS category_rows
+    WHERE category_rows.product_id = days.product_id
+      AND category_rows.valid_from_utc <= (days.metric_date::timestamp AT TIME ZONE 'UTC')
+      AND (days.metric_date::timestamp AT TIME ZONE 'UTC') < category_rows.valid_to_utc
+    ORDER BY category_rows.valid_from_utc DESC
+    LIMIT 1
+) AS categories ON TRUE;
+
 COMMIT;
