@@ -234,4 +234,25 @@ SELECT
 FROM bronze.raw_records
 WHERE source_file = 'operational/product_categories.json';
 
+-- One row per store_id.
+DELETE FROM silver.stores;
+
+INSERT INTO silver.stores (
+    store_id,
+    store_name,
+    city_id,
+    location_type,
+    bronze_row_id,
+    pipeline_run_id
+)
+SELECT
+    payload->>'store_id',
+    payload->>'store_name',
+    payload->>'city_id',
+    payload->>'location_type',
+    bronze_row_id,
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/stores.json';
+
 COMMIT;

@@ -95,3 +95,13 @@ CREATE TABLE IF NOT EXISTS silver.product_categories (
     bronze_row_id BIGINT NOT NULL,
     pipeline_run_id TEXT NOT NULL
 );
+
+-- One row per store. A blank store_id on an order is still allowed.
+CREATE TABLE IF NOT EXISTS silver.stores (
+    store_id TEXT PRIMARY KEY,
+    store_name TEXT NOT NULL,
+    city_id TEXT NOT NULL,
+    location_type TEXT NOT NULL,
+    bronze_row_id BIGINT NOT NULL,
+    pipeline_run_id TEXT NOT NULL
+);
