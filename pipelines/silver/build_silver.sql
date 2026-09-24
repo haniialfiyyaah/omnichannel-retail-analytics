@@ -1,6 +1,6 @@
 -- Fill silver.orders and silver.order_items from bronze.raw_records.
 -- A rejected item stays out of silver.order_items. Its order stays in silver.orders.
--- Duplicate copies stay in Bronze. They are not rejections.
+-- A losing duplicate stays in Bronze and is also written to silver.rejected_records.
 
 BEGIN;
 
@@ -38,6 +38,27 @@ ORDER BY
     payload->>'order_id',
     (payload->>'updated_at_utc')::timestamptz DESC,
     source_line_number DESC;
+
+-- The order copy that lost is recorded. The winner stays in silver.orders.
+DELETE FROM silver.rejected_records
+WHERE source_file = 'operational/orders.json';
+
+INSERT INTO silver.rejected_records (
+    bronze_row_id,
+    source_file,
+    source_record_id,
+    rejection_reason,
+    pipeline_run_id
+)
+SELECT
+    bronze_row_id,
+    source_file,
+    payload->>'order_id',
+    'duplicate_order_id',
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/orders.json'
+  AND bronze_row_id NOT IN (SELECT bronze_row_id FROM silver.orders);
 
 -- Replace the previous item load and its rejection reasons.
 DELETE FROM silver.order_items;
@@ -115,6 +136,29 @@ WHERE source_file = 'operational/order_items.json'
 ORDER BY
     payload->>'order_item_id',
     source_line_number DESC;
+
+-- An item copy that lost, and was not already rejected, is recorded.
+INSERT INTO silver.rejected_records (
+    bronze_row_id,
+    source_file,
+    source_record_id,
+    rejection_reason,
+    pipeline_run_id
+)
+SELECT
+    bronze_row_id,
+    source_file,
+    payload->>'order_item_id',
+    'duplicate_order_item_id',
+    pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'operational/order_items.json'
+  AND bronze_row_id NOT IN (SELECT bronze_row_id FROM silver.order_items)
+  AND bronze_row_id NOT IN (
+      SELECT bronze_row_id
+      FROM silver.rejected_records
+      WHERE source_file = 'operational/order_items.json'
+  );
 
 -- One row per customer_id. A repeated id keeps the higher source_line_number.
 DELETE FROM silver.customers;
@@ -350,6 +394,17 @@ ORDER BY
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
 
+DELETE FROM silver.rejected_records
+WHERE source_file = 'events/payment_events.json';
+
+INSERT INTO silver.rejected_records (
+    bronze_row_id, source_file, source_record_id, rejection_reason, pipeline_run_id
+)
+SELECT bronze_row_id, source_file, payload->>'event_id', 'duplicate_event_id', pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/payment_events.json'
+  AND bronze_row_id NOT IN (SELECT bronze_row_id FROM silver.payment_events);
+
 -- One winner per event_id. A repeated refund_id is another stage and stays.
 DELETE FROM silver.refund_events;
 
@@ -381,6 +436,17 @@ ORDER BY
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
 
+DELETE FROM silver.rejected_records
+WHERE source_file = 'events/refund_events.json';
+
+INSERT INTO silver.rejected_records (
+    bronze_row_id, source_file, source_record_id, rejection_reason, pipeline_run_id
+)
+SELECT bronze_row_id, source_file, payload->>'event_id', 'duplicate_event_id', pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/refund_events.json'
+  AND bronze_row_id NOT IN (SELECT bronze_row_id FROM silver.refund_events);
+
 -- One winner per return event_id.
 DELETE FROM silver.return_events;
 
@@ -409,6 +475,17 @@ ORDER BY
     payload->>'event_id',
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
+
+DELETE FROM silver.rejected_records
+WHERE source_file = 'events/return_events.json';
+
+INSERT INTO silver.rejected_records (
+    bronze_row_id, source_file, source_record_id, rejection_reason, pipeline_run_id
+)
+SELECT bronze_row_id, source_file, payload->>'event_id', 'duplicate_event_id', pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/return_events.json'
+  AND bronze_row_id NOT IN (SELECT bronze_row_id FROM silver.return_events);
 
 -- One winner per support event_id. A blank reason is kept as null.
 DELETE FROM silver.support_events;
@@ -442,6 +519,17 @@ ORDER BY
     payload->>'event_id',
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
+
+DELETE FROM silver.rejected_records
+WHERE source_file = 'events/support_events.json';
+
+INSERT INTO silver.rejected_records (
+    bronze_row_id, source_file, source_record_id, rejection_reason, pipeline_run_id
+)
+SELECT bronze_row_id, source_file, payload->>'event_id', 'duplicate_event_id', pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/support_events.json'
+  AND bronze_row_id NOT IN (SELECT bronze_row_id FROM silver.support_events);
 
 -- One winner per web event_id. A blank campaign_id is kept as null.
 DELETE FROM silver.web_events;
@@ -477,6 +565,17 @@ ORDER BY
     payload->>'event_id',
     (payload->>'occurred_at_utc')::timestamptz DESC,
     source_line_number DESC;
+
+DELETE FROM silver.rejected_records
+WHERE source_file = 'events/web_events.json';
+
+INSERT INTO silver.rejected_records (
+    bronze_row_id, source_file, source_record_id, rejection_reason, pipeline_run_id
+)
+SELECT bronze_row_id, source_file, payload->>'event_id', 'duplicate_event_id', pipeline_run_id
+FROM bronze.raw_records
+WHERE source_file = 'events/web_events.json'
+  AND bronze_row_id NOT IN (SELECT bronze_row_id FROM silver.web_events);
 
 -- Keep observed inventory days only. A missing day is not inserted as quantity 0.
 DELETE FROM silver.inventory_snapshots;
