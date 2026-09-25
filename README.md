@@ -33,7 +33,7 @@ One trigger of `[dags/dag.py](dags/dag.py)` runs these tasks in order. Each task
 | `initialize_schemas` | Creates Bronze, Silver, Gold, and `ops` if they are missing        |
 | `load_bronze`        | Creates one `pipeline_run_id` and reloads Bronze                   |
 | `build_silver`       | Rebuilds Silver from that Bronze                                   |
-| `quality_gate`       | Checks Silver and records the result in `ops`                      |
+| `quality_gate`       | Checks Silver. A pass leaves the run `running`                     |
 | `build_gold`         | Rebuilds the five Gold tables                                      |
 | `validate_gold`      | Compares Gold with Silver and sets the run to `passed` or `failed` |
 
@@ -68,13 +68,21 @@ Silver reads Bronze and writes typed tables.
 
 ### 4. Quality gate
 
-The gate runs after Silver and before Gold. It checks Silver only:
+The gate runs after Silver and before Gold. It reads Silver only. It does not change Bronze, Silver, or Gold.
 
-- `silver.orders` has rows.
-- A duplicate order is in `silver.rejected_records` and is not stored twice.
-- A rejected item is absent from `silver.order_items`.
+It marks this `pipeline_run_id` as `running` in `ops.pipeline_runs`, deletes any earlier rows for these three check names on that same run, then inserts them again.
 
-A failure is stored in `ops.quality_checks`. Airflow does not start `build_gold`.
+| Check | What it counts | Pass |
+| --- | --- | --- |
+| `silver_orders_loaded` | rows in `silver.orders` | the count is greater than 0 |
+| `duplicate_order_rejected` | orders stored twice, and rows with reason `duplicate_order_id` | no order is stored twice, and at least one losing copy is in `rejected_records` |
+| `rejected_item_absent` | `order_items` whose id was rejected for `negative_quantity` or `missing_product` | that count is 0 |
+
+These three are the stop signal. `silver_orders_loaded` stops an empty order table from becoming empty Gold totals. `duplicate_order_rejected` stops one `order_id` from being counted twice. `rejected_item_absent` stops a rejected item from being added into gross revenue.
+
+Duplicate events are already written to `rejected_records` by `build_silver`. The gate does not count them again. Refunds, captured payments, and net revenue are checked in `validate_gold`, because those checks need the Gold tables.
+
+If any of the three fails, the run is set to `failed` and Airflow does not start `build_gold`. If all three pass, the run stays `running`. Gold has not been built yet, so this step does not mark the pipeline passed.
 
 ### 5. Gold
 
@@ -92,16 +100,22 @@ Gold reads Silver only. Amounts are aggregated to the table grain before any joi
 
 ### 6. Validate Gold
 
-These checks compare Gold with Silver after Gold has been built:
+`build_gold` fills the five Gold tables, including `order_360.net_revenue`, only after the gate passes. `validate_gold` then compares totals. It does not change Silver or Gold.
 
-- order count
-- net revenue
-- completed refunds
-- captured payments
-- item revenue
-- daily order totals
+It marks the same run `running` again, deletes any earlier rows for these six check names, then inserts them again. The three gate rows stay.
 
-Results are written to `ops.quality_checks` on the same `pipeline_run_id`. They cannot run on an empty Gold table. The order-count check would fail, and Gold would never load.
+| Check | Expected | Observed |
+| --- | --- | --- |
+| `order_grain` | count of `silver.orders` | count of `gold.order_360` |
+| `revenue_match` | item gross − promotion discount + shipping − completed refunds, added from Silver | `SUM(gold.order_360.net_revenue)` |
+| `refund_match` | sum of Silver `REFUND_COMPLETED` | sum of Gold `refunded_amount` |
+| `captured_match` | sum of Silver `PAYMENT_CAPTURED` | sum of Gold `captured_payment_amount` |
+| `item_revenue_match` | sum of Silver `quantity * unit_price` | sum of Gold gross merchandise value |
+| `daily_orders_match` | count of `gold.order_360` | sum of `executive_kpis_daily.total_orders` |
+
+`revenue_match` reads Silver and adds one number. It does not write Silver. `SUM(gold.order_360.net_revenue)` is the net revenue column `build_gold` already stored. `daily_orders_match` compares two Gold totals, so a daily rollup that dropped or doubled orders fails.
+
+If any of the six fails, the run is set to `failed`. If all six pass, this is the step that sets the run to `passed` and fills `finished_at`.
 
 ### 7. Engine and UI
 
