@@ -2,6 +2,15 @@
 -- {{pipeline_run_id}} is replaced by the Python runner.
 -- These checks read Silver only. They run before Gold is built.
 -- These statements do not change Bronze, Silver, or Gold.
+-- A retry of this step replaces these three rows. It does not keep the old failure.
+
+DELETE FROM ops.quality_checks
+WHERE pipeline_run_id = '{{pipeline_run_id}}'
+  AND check_name IN (
+      'silver_orders_loaded',
+      'duplicate_order_rejected',
+      'rejected_item_absent'
+  );
 
 INSERT INTO ops.quality_checks (
     pipeline_run_id, check_name, status, expected_value, observed_value

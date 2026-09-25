@@ -1,7 +1,8 @@
 """Run the quality gate on Silver before Gold is built.
 
 A failed check is stored in ops.quality_checks and this module exits so Gold
-does not run.
+does not run. A pass leaves ops.pipeline_runs.status as running. validate_gold
+is the step that marks the run passed.
 """
 
 from __future__ import annotations
@@ -10,12 +11,20 @@ import logging
 import sys
 import uuid
 from pathlib import Path
+from typing import Any
 
 from shared.db import connect
 
 logger = logging.getLogger(__name__)
 
 SQL_PATH = Path(__file__).with_name("quality_gate.sql")
+
+# These names must match the DELETE and INSERT lists in quality_gate.sql.
+GATE_CHECKS = (
+    "silver_orders_loaded",
+    "duplicate_order_rejected",
+    "rejected_item_absent",
+)
 
 
 def quality_gate(pipeline_run_id: str | None = None) -> list[tuple[str, str]]:
@@ -34,16 +43,8 @@ def quality_gate(pipeline_run_id: str | None = None) -> list[tuple[str, str]]:
             (run_id,),
         )
         connection.execute(check_sql)
-        rows = connection.execute(
-            """
-            SELECT check_name, status
-            FROM ops.quality_checks
-            WHERE pipeline_run_id = %s
-            ORDER BY check_name
-            """,
-            (run_id,),
-        ).fetchall()
-        failed = [str(name) for name, status in rows if status != "passed"]
+        results = _results_for(connection, run_id, GATE_CHECKS)
+        failed = [name for name, status in results if status != "passed"]
         if failed:
             connection.execute(
                 """
@@ -56,15 +57,29 @@ def quality_gate(pipeline_run_id: str | None = None) -> list[tuple[str, str]]:
                 ("failed: " + ", ".join(failed), run_id),
             )
         else:
-            connection.execute(
-                """
-                UPDATE ops.pipeline_runs
-                SET status = 'passed', finished_at = now()
-                WHERE pipeline_run_id = %s
-                """,
-                (run_id,),
-            )
-    return [(str(name), str(status)) for name, status in rows]
+            # Gold has not run yet. Leaving status running avoids a passed run
+            # when build_gold fails before validate_gold can record it.
+            logger.info("Quality gate passed for %s; run stays running", run_id)
+    return results
+
+
+def _results_for(
+    connection: Any, run_id: str, check_names: tuple[str, ...]
+) -> list[tuple[str, str]]:
+    """Return one status per check this step owns. A missing row counts as failed."""
+    placeholders = ", ".join("%s" for _ in check_names)
+    rows = connection.execute(
+        f"""
+        SELECT check_name, status
+        FROM ops.quality_checks
+        WHERE pipeline_run_id = %s
+          AND check_name IN ({placeholders})
+        ORDER BY check_name
+        """,
+        (run_id, *check_names),
+    ).fetchall()
+    found = {str(name): str(status) for name, status in rows}
+    return [(name, found.get(name, "failed")) for name in check_names]
 
 
 def main() -> None:
