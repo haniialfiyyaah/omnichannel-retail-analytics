@@ -157,7 +157,11 @@ Title: **Refunds have no product id**
 
 ## 10 · Close
 
-- Local PostgreSQL holds Bronze, Silver, Gold, and `ops`.
-- Airflow’s own history is a separate database on that same server.
-- Bronze and Silver are not uploaded to Neon.
-- Thank you.
+**Main point:** The chart matches the source.
+
+- Bronze keeps every raw record.
+- Silver keeps one winner and records the loser.
+- Gold sums the money before any join.
+- The checks compare Silver totals with Gold before a question.
+
+Thank you.

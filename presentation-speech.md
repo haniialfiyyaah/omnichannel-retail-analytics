@@ -24,7 +24,7 @@ Have these open before you start:
 | 7 Gold          | 35s   | Five grains and the net-revenue formula          |
 | 8 Demo          | 3 min | Green DAG, then one question                     |
 | 9 Evaluasi      | 40s   | Refund limit, then the rules the brief left open |
-| 10 Close        | 15s   | Local Postgres, then questions                   |
+| 10 Close        | 30s   | Main point, then the four details                |
 
 ---
 
@@ -131,8 +131,10 @@ Stay on the slide. Do not open SQL. Point at the refund lines, then at the two c
 
 ## 10 · Close
 
-**15 seconds**
+**30 seconds**
 
-> The pipeline runs on my machine. Neon stays the instructor sample. I can take questions.
+> The chart matches the source. Bronze keeps every raw record. Silver keeps one winner and records the loser. Gold sums the money before any join. The checks compare Silver totals with Gold before anyone asks a question. I can take questions.
+
+Point at the main point, then move down the four details.
 
 Stop sharing the demo. Leave this slide up for questions.
