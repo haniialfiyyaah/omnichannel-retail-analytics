@@ -4,6 +4,8 @@ A local data pipeline for an omnichannel retailer. Orders, payments, refunds, re
 
 This repo does not rebuild the engine, the UI, or the Gold table contract. It builds the path those tools read from.
 
+**Presentation:** [Omnichannel Retail Analytics](https://gamma.app/docs/Omnichannel-Retail-Analytics-yus0t1rkg5yqdy4)
+
 ## The point
 
 The source data is messy: duplicate orders, split payments, partial refunds, mixed timezones, missing products, and inventory days that never arrived. The engine can only see Gold. If Gold is wrong, a question still returns a chart, and the chart is wrong. Bronze keeps the original records, Silver rejects bad rows and says why, Gold totals each fact once, and the checks stop the run when those totals do not add up.
